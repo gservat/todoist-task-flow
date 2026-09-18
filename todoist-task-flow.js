@@ -5,6 +5,7 @@ class TodoistTaskFlow extends HTMLElement {
     return {
       entities: [],
       title: "Mine Opgaver",
+      locale: "auto",
       default_filter: "all",
       show_completed: false,
       show_project_tag: false, 
@@ -114,9 +115,15 @@ class TodoistTaskFlow extends HTMLElement {
   }
 
   // --- LOCALIZATION HELPER ---
+  getLocale() {
+      const configuredLocale = this.config?.locale;
+      if (configuredLocale && configuredLocale !== 'auto') return configuredLocale;
+      return this._hass?.language || 'en-US';
+  }
+
   getLanguage() {
-      const hassLang = this._hass?.language?.toLowerCase() || 'en';
-      return (hassLang === 'da' || hassLang.startsWith('da-')) ? 'da' : 'en';
+      const locale = this.getLocale().toLowerCase();
+      return (locale === 'da' || locale.startsWith('da-')) ? 'da' : 'en';
   }
 
   localize(key) {
@@ -126,7 +133,7 @@ class TodoistTaskFlow extends HTMLElement {
         'all': 'Alle', 'today': 'I dag', 'overdue': 'Forfaldne', 'today_overdue': 'Nu', 
         'week': 'Denne uge', 'month': 'Denne måned', 
         'tomorrow': 'I morgen', 'upcoming': 'Kommende', 'no_date': 'Uden dato',
-        'completed': 'Afsluttet', 'delete': 'Slet', 'on': 'På ',
+        'completed': 'Afsluttet', 'delete': 'Slet', 'on': 'På ', 'at_time': 'kl. {time}',
         'add_task': 'Tilføj ny opgave...', 'delete_confirm': 'Slet',
         'loading_error': 'Der skete en fejl. Prøv igen.',
         'no_tasks': 'Ingen opgaver.',
@@ -140,7 +147,7 @@ class TodoistTaskFlow extends HTMLElement {
         'all': 'All', 'today': 'Today', 'overdue': 'Overdue', 'today_overdue': 'Now',
         'week': 'This Week', 'month': 'This Month', 
         'tomorrow': 'Tomorrow', 'upcoming': 'Upcoming', 'no_date': 'No date',
-        'completed': 'Completed', 'delete': 'Delete', 'on': 'On ',
+        'completed': 'Completed', 'delete': 'Delete', 'on': 'On ', 'at_time': 'at {time}',
         'add_task': 'Add new task...', 'delete_confirm': 'Delete',
         'loading_error': 'An error occurred. Please try again.',
         'no_tasks': 'No tasks.',
@@ -293,7 +300,7 @@ class TodoistTaskFlow extends HTMLElement {
 
   formatDateSmart(isoDate) {
       if (!isoDate) return "";
-      const lang = this.getLanguage() === 'da' ? 'da-DK' : 'en-US';
+      const locale = this.getLocale();
       const isDateOnly = isoDate.length === 10;
       const taskDate = new Date(isoDate);
       const today = new Date(); today.setHours(0,0,0,0);
@@ -303,23 +310,25 @@ class TodoistTaskFlow extends HTMLElement {
 
       let timeStr = "";
       if (!isDateOnly) {
-          const hours = taskDate.getHours().toString().padStart(2, '0');
-          const minutes = taskDate.getMinutes().toString().padStart(2, '0');
-          timeStr = ` ${hours}:${minutes}`;
+          const time = new Intl.DateTimeFormat(locale, {
+              hour: 'numeric',
+              minute: '2-digit'
+          }).format(taskDate);
+          timeStr = this.localize('at_time').replace('{time}', time);
       }
 
       let dateStr = "";
-      if (diffDays < 0) dateStr = taskDate.toLocaleDateString(lang, { day: 'numeric', month: 'short' });
+      if (diffDays < 0) dateStr = taskDate.toLocaleDateString(locale, { day: 'numeric', month: 'short' });
       else if (diffDays === 0) dateStr = this.localize('today');
       else if (diffDays === 1) dateStr = this.localize('tomorrow');
       else if (diffDays > 1 && diffDays < 7) {
           const options = { weekday: 'long' };
-          let day = new Intl.DateTimeFormat(lang, options).format(taskDate);
+          let day = new Intl.DateTimeFormat(locale, options).format(taskDate);
           dateStr = this.localize('on') + day.charAt(0).toUpperCase() + day.slice(1);
       } else {
-          dateStr = taskDate.toLocaleDateString(lang, { day: 'numeric', month: 'short' });
+          dateStr = taskDate.toLocaleDateString(locale, { day: 'numeric', month: 'short' });
       }
-      return dateStr + (timeStr ? ` <span style="opacity:0.7">kl.${timeStr}</span>` : "");
+      return dateStr + (timeStr ? ` <span style="opacity:0.7">${timeStr}</span>` : "");
   }
 
   escapeAttribute(text) {
@@ -662,17 +671,18 @@ class TodoistTaskFlowEditor extends HTMLElement {
 
   render() {
     if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
-    const { title, default_filter, show_completed, header_color, compact_view, enabled_filters, theme, background_color, background_opacity, text_color, bubble_color, bubble_opacity, use_gamification, visual_effect, sound_effect, show_project_tag, hide_header, hide_add_task, max_items, font_scale, sort_order } = this._config;
+    const { title, locale, default_filter, show_completed, header_color, compact_view, enabled_filters, theme, background_color, background_opacity, text_color, bubble_color, bubble_opacity, use_gamification, visual_effect, sound_effect, show_project_tag, hide_header, hide_add_task, max_items, font_scale, sort_order } = this._config;
     const allTodoEntities = this._hass ? Object.keys(this._hass.states).filter(eid => eid.startsWith('todo.')) : [];
     let currentEntities = this._config.entities || [];
     if (typeof currentEntities === 'string') currentEntities = currentEntities.split(',').map(e => e.trim());
     
     // Localization
-    const hassLang = this._hass?.language?.toLowerCase() || 'en';
-    const lang = (hassLang === 'da' || hassLang.startsWith('da-')) ? 'da' : 'en';
+    const activeLocale = locale && locale !== 'auto' ? locale : (this._hass?.language || 'en-US');
+    const normalizedLocale = activeLocale.toLowerCase();
+    const lang = (normalizedLocale === 'da' || normalizedLocale.startsWith('da-')) ? 'da' : 'en';
     const t = {
         da: {
-            title: 'Titel', theme: 'Design Tema', header_color: 'Header Farve', reset: 'Nulstil', color_help: 'Vælg farve (kun for Standard og Frosted design).', select_lists: 'Vælg Todo Lister', no_lists: 'Ingen todo-lister fundet', lists_help: 'Vælg én eller flere lister.', active_filters: 'Aktive Filtre', start_filter: 'Start-Filter', show_completed: 'Vis afsluttede opgaver', compact_view: 'Kompakt Visning',
+            title: 'Titel', locale: 'Sprog og lokalitet', locale_auto: 'Automatisk (Home Assistant)', theme: 'Design Tema', header_color: 'Header Farve', reset: 'Nulstil', color_help: 'Vælg farve (kun for Standard og Frosted design).', select_lists: 'Vælg Todo Lister', no_lists: 'Ingen todo-lister fundet', lists_help: 'Vælg én eller flere lister.', active_filters: 'Aktive Filtre', start_filter: 'Start-Filter', show_completed: 'Vis afsluttede opgaver', compact_view: 'Kompakt Visning',
             background_color: 'Kort Baggrundsfarve', background_opacity: 'Kort Gennemsigtighed', background_help: 'Vælg baggrundsfarve og gennemsigtighed for kortet (Ikke Minimalist).',
             text_color: 'Tekstfarve', text_help: 'Vælg farve til teksten på kortet.',
             bubble_color: 'Boble Farve', bubble_opacity: 'Boble Gennemsigtighed', bubble_help: 'Vælg farve til boblerne.',
@@ -685,7 +695,7 @@ class TodoistTaskFlowEditor extends HTMLElement {
             sounds: { none: 'Ingen', ding: 'Ding', pop: 'Pop', coin: 'Mønt' }
         },
         en: {
-            title: 'Title', theme: 'Design Theme', header_color: 'Header Color', reset: 'Reset', color_help: 'Pick color (Standard & Frosted themes only).', select_lists: 'Select Todo Lists', no_lists: 'No todo lists found', lists_help: 'Select one or more lists.', active_filters: 'Active Filters', start_filter: 'Start Filter', show_completed: 'Show completed tasks', compact_view: 'Compact View',
+            title: 'Title', locale: 'Language and locale', locale_auto: 'Automatic (Home Assistant)', theme: 'Design Theme', header_color: 'Header Color', reset: 'Reset', color_help: 'Pick color (Standard & Frosted themes only).', select_lists: 'Select Todo Lists', no_lists: 'No todo lists found', lists_help: 'Select one or more lists.', active_filters: 'Active Filters', start_filter: 'Start Filter', show_completed: 'Show completed tasks', compact_view: 'Compact View',
             background_color: 'Card Background Color', background_opacity: 'Card Opacity', background_help: 'Pick card background color and opacity (Not Minimalist).',
             text_color: 'Text Color', text_help: 'Pick color for text on the card.',
             bubble_color: 'Bubble Color', bubble_opacity: 'Bubble Opacity', bubble_help: 'Pick color for the task bubbles.',
@@ -723,6 +733,13 @@ class TodoistTaskFlowEditor extends HTMLElement {
       </style>
       <div class="row"><label>${s.title}</label><input type="text" id="title-input" value="${title}"></div>
       
+      <div class="row"><label>${s.locale}</label><select id="locale-input">
+        <option value="auto" ${(locale||'auto')==='auto'?'selected':''}>${s.locale_auto}</option>
+        <option value="da-DK" ${locale==='da-DK'?'selected':''}>Dansk (Danmark)</option>
+        <option value="en-US" ${locale==='en-US'?'selected':''}>English (United States)</option>
+        <option value="en-GB" ${locale==='en-GB'?'selected':''}>English (United Kingdom)</option>
+      </select></div>
+
       <div class="row"><label>${s.theme}</label><select id="theme-input">${availableThemes.map(th => `<option value="${th.id}" ${(theme||'standard')===th.id?'selected':''}>${th.label}</option>`).join('')}</select></div>
 
       ${showHeaderColor ? `
@@ -772,6 +789,7 @@ class TodoistTaskFlowEditor extends HTMLElement {
     const getChecked = (sel) => Array.from(this.shadowRoot.querySelectorAll(sel)).filter(b=>b.checked).map(b=>b.value);
     
     this.shadowRoot.getElementById("title-input").addEventListener("change", (e) => this.configChanged({ ...this._config, title: e.target.value }));
+    this.shadowRoot.getElementById("locale-input").addEventListener("change", (e) => this.configChanged({ ...this._config, locale: e.target.value }));
     this.shadowRoot.getElementById("theme-input").addEventListener("change", (e) => this.configChanged({ ...this._config, theme: e.target.value }));
     
     if (showHeaderColor) {
