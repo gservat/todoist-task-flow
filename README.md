@@ -77,6 +77,7 @@ If you prefer YAML, a typical configuration looks like this:
 ```yaml
 type: custom:todoist-task-flow
 title: My Tasks
+locale: en-GB # optional; defaults to Home Assistant's language
 entities:
   - todo.groceries
   - todo.work
